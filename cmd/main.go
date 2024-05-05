@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,12 +11,12 @@ import (
 )
 
 const (
-	srcDir  = `C:\dev\project\simpleProgs\rebrain\finalTask\srcTestDir`
-	destDir = `C:\dev\project\simpleProgs\rebrain\finalTask\testDir`
+	srcDir  = "./srcTestDir"
+	destDir = "./testDir"
 )
 
 func main() {
-	// defer fmt.Println("synchronized")
+	defer fmt.Println("synchronized")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -36,15 +35,6 @@ func syncDirs(ctx context.Context, srcDir, destDir string) error {
 		defer wg.Done()
 		for {
 			select {
-			case file, ok := <-filesToCopy:
-				if !ok {
-					return
-				}
-				srcFilePath := filepath.Join(srcDir, file)
-				dstFilePath := filepath.Join(destDir, file)
-				if err := copyFile(srcFilePath, dstFilePath); err != nil {
-					fmt.Printf("Failed to copy %s to %s: %v\n", srcFilePath, dstFilePath, err)
-				}
 
 			case del, ok := <-filesToDelete:
 				if !ok {
@@ -57,10 +47,10 @@ func syncDirs(ctx context.Context, srcDir, destDir string) error {
 				if !ok {
 					return
 				}
-				fmt.Println(synch)
 				srcFilePath := filepath.Join(srcDir, synch)
 				dstFilePath := filepath.Join(destDir, synch)
-				if err := syncFiles(srcFilePath, dstFilePath); err != nil {
+				err := syncFiles(srcFilePath, dstFilePath)
+				if err != nil {
 					fmt.Printf("Failed to synch %s to %s: %v\n", srcFilePath, dstFilePath, err)
 				}
 
@@ -80,46 +70,25 @@ func syncDirs(ctx context.Context, srcDir, destDir string) error {
 			return err
 		}
 
-		dstPath := filepath.Join(destDir, relPath)
-		if _, err := os.Stat(dstPath); os.IsNotExist(err) {
-			filesToCopy <- relPath // Файл отсутствует в целевой директории, добавляем в список для копирования.
-		}
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("%v", err)
-	}
-
-	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-
 		if relPath == "." {
 			return nil
-		} else {
+		}
+
+		dstPath := filepath.Join(destDir, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		if !info.IsDir() {
 			filesToSync <- relPath
 		}
 
-		dstPath := filepath.Join(destDir, relPath)
-		_, err = os.Stat(dstPath)
-		if err != nil {
-			fmt.Println(err)
-		}
-		// fmt.Println(f)
-		// Файл присутствует в целевой директории, добавляем в список для копирования.
-
 		return nil
 	})
 
 	if err != nil {
-		return fmt.Errorf("%v", err)
+		return fmt.Errorf("error making files to synch %v", err)
 	}
 
 	err = filepath.Walk(destDir, func(path string, info os.FileInfo, err error) error {
@@ -134,51 +103,35 @@ func syncDirs(ctx context.Context, srcDir, destDir string) error {
 
 		srcPath := filepath.Join(srcDir, relPath)
 		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-			filesToDelete <- relPath // Файл отсутствует в целевой директории, добавляем в список для копирования.
+			filesToDelete <- relPath
 		}
 
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("%v", err)
+		return fmt.Errorf("error making files to delete %v", err)
 	}
 	close(filesToCopy)
 	close(filesToDelete)
 	close(filesToSync)
 
-	wg.Wait() // Ожидаем завершения работы горутины копирования.
+	wg.Wait()
 
 	return nil
 }
 
-func copyFile(srcPath, destPath string) error {
+func syncFiles(srcPath, destPath string) error {
 	srcFile, err := os.Open(srcPath)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
 
-	destFile, err := os.Create(destPath)
+	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0664)
 	if err != nil {
 		return err
 	}
 	defer destFile.Close()
-
-	_, err = io.Copy(srcFile, destFile)
-	if err != nil {
-		return err
-	}
-
-	srcInfo, err := os.Stat(srcPath)
-	if err != nil {
-		return err
-	}
-
-	return os.Chmod(destPath, srcInfo.Mode())
-}
-
-func syncFiles(srcPath, destPath string) error {
-	var txt []byte
 
 	srcInfo, err := os.Stat(srcPath)
 	if err != nil {
@@ -190,28 +143,14 @@ func syncFiles(srcPath, destPath string) error {
 		return err
 	}
 
-	srcFile, err := os.Open(srcPath)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	destFile, err := os.OpenFile(destPath, os.O_APPEND, 0664)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	err = destFile.Truncate(0)
-	if err != nil {
-		fmt.Println(err)
+	scanner := bufio.NewScanner(srcFile)
+	for scanner.Scan() {
+		text := scanner.Text()
+		_, err = destFile.Write([]byte(text))
+		if err != nil {
+			return err
+		}
 	}
 
-	reader := bufio.NewReader(srcFile)
-	reader.Read(txt)
-	_, err = destFile.Write(txt)
-	if err != nil {
-		fmt.Println(err)
-	}
 	return nil
 }
