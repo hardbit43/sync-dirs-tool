@@ -1,5 +1,5 @@
-testDir
-srcTestDir
+./testDir
+./srcTestDir
 ./internal
 ./pkg
 log.txt
