@@ -39,11 +39,17 @@ func TestScanDest(t *testing.T) {
 
 func TestSyncFiles(t *testing.T) {
 	req := require.New(t)
-	srcFile, _ := fs.Create("/src/file1.txt")
-	dstFile, _ := fs.Create("/dst/file2.txt")
+	afero.WriteFile(fs, "/src/file", []byte("smth"), 0664)
+	afero.WriteFile(fs, "/dst/file", []byte("smth"), 0664)
+	err := syncFiles("/src", "/dst")
+	req.NoError(err)
+}
+
+func BenchmarkSyncDirs(b *testing.B) {
 	afero.WriteFile(fs, "/src/file1.txt", []byte("smth"), 0664)
 	afero.WriteFile(fs, "/dst/file2.txt", []byte("smth"), 0664)
-
-	err := syncFiles(srcFile.Name(), dstFile.Name())
-	req.NoError(err)
+	ctx := context.Background()
+	for i := 0; i < b.N; i++ {
+		SyncDirs(ctx, "/src", "/dst")
+	}
 }

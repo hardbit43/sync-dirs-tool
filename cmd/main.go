@@ -17,8 +17,8 @@ func main() {
 	defer slog.Log(ctx, slog.LevelInfo.Level(), "synchronized")
 	err := synchronizer.SyncDirs(ctx, synchronizer.SrcDir, synchronizer.DestDir)
 	if err != nil {
-		defer os.Exit(1)
 		slog.Error("not synchronized", err)
+		os.Exit(1)
 	}
 	time.Sleep(1 * time.Second)
 }

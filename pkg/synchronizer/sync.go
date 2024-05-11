@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	filesToDelete = make(chan string)
-	filesToSync   = make(chan string)
+	filesToDelete = make(chan string, 10)
+	filesToSync   = make(chan string, 10)
 )
 
 func scanSrc(SrcDir string) error {
@@ -69,6 +69,9 @@ func scanDest(DestDir string) error {
 			slog.Info(relPath, "deleting file size is", humanize.Bytes(uint64(info.Size())))
 			filesToDelete <- relPath
 		}
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -81,13 +84,13 @@ func syncFiles(srcPath, destPath string) error {
 		return err
 	}
 
-	srcFile, err := os.OpenFile(srcPath, os.O_CREATE|os.O_RDWR, 0664)
+	srcFile, err := os.Open(srcPath)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
 
-	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY, srcInfo.Mode())
+	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
 	if err != nil {
 		return err
 	}
@@ -108,7 +111,8 @@ func syncFiles(srcPath, destPath string) error {
 }
 
 func SyncDirs(ctx context.Context, SrcDir, DestDir string) error {
-
+	errChan := make(chan error)
+	defer close(errChan)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -144,16 +148,24 @@ func SyncDirs(ctx context.Context, SrcDir, DestDir string) error {
 		}
 	}()
 
-	err := scanSrc(SrcDir)
-	if err != nil {
-		slog.Error("error making files to sync", err)
-	}
+	wg.Add(1)
+	func() {
+		defer wg.Done()
+		err := scanSrc(SrcDir)
+		if err != nil {
+			slog.Error("error making files to sync", err)
+		}
+	}()
 
-	err = scanDest(DestDir)
+	wg.Add(1)
+	func() {
+		wg.Done()
+		err := scanDest(DestDir)
 
-	if err != nil {
-		slog.Error("error making file to delete", err)
-	}
+		if err != nil {
+			slog.Error("error making file to delete", err)
+		}
+	}()
 
 	close(filesToSync)
 	close(filesToDelete)
