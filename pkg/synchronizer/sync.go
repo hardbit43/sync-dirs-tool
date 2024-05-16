@@ -11,12 +11,9 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-const (
-	SrcDir  = "./srcTestDir"
-	DestDir = "./testDir"
-)
-
 var (
+	SrcDir        = "./srcTestDir"
+	DestDir       = "./testDir"
 	filesToDelete = make(chan string, 10)
 	filesToSync   = make(chan string, 10)
 )
@@ -61,6 +58,9 @@ func scanDest(DestDir string) error {
 		relPath, err := filepath.Rel(DestDir, path)
 		if err != nil {
 			return err
+		}
+		if relPath == "." {
+			return nil
 		}
 
 		srcPath := filepath.Join(SrcDir, relPath)
@@ -111,8 +111,6 @@ func syncFiles(srcPath, destPath string) error {
 }
 
 func SyncDirs(ctx context.Context, SrcDir, DestDir string) error {
-	errChan := make(chan error)
-	defer close(errChan)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -145,6 +143,7 @@ func SyncDirs(ctx context.Context, SrcDir, DestDir string) error {
 			case <-ctx.Done():
 				return
 			}
+
 		}
 	}()
 
@@ -166,9 +165,9 @@ func SyncDirs(ctx context.Context, SrcDir, DestDir string) error {
 			slog.Error("error making file to delete", err)
 		}
 	}()
-
-	close(filesToSync)
 	close(filesToDelete)
+	close(filesToSync)
 	wg.Wait()
+
 	return nil
 }
