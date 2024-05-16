@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	SrcDir        = "./srcTestDir"
-	DestDir       = "./testDir"
+	SrcDir        = os.Args[1]
+	DestDir       = os.Args[2]
 	filesToDelete = make(chan string, 10)
 	filesToSync   = make(chan string, 10)
 )
